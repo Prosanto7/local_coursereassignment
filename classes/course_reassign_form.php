@@ -35,8 +35,6 @@ class local_coursereassignment_course_form extends moodleform {
      * Form definition.
      */
     public function definition() {
-        global $DB;
-        
         $mform = $this->_form;
         
         // User selection with autocomplete.

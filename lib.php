@@ -24,6 +24,13 @@
 
 defined('MOODLE_INTERNAL') || die();
 
+require_once($CFG->libdir . '/gradelib.php');
+require_once($CFG->libdir . '/completionlib.php');
+require_once($CFG->dirroot . '/grade/querylib.php');
+require_once($CFG->dirroot . '/course/lib.php');
+require_once($CFG->dirroot . '/mod/quiz/locallib.php');
+require_once($CFG->dirroot . '/mod/quiz/lib.php');
+
 /**
  * Validate if user is enrolled in a course.
  *
@@ -65,10 +72,12 @@ function local_coursereassignment_is_quiz_valid($quizid, $courseid) {
  * @return int|bool Insert ID or false on failure
  */
 function local_coursereassignment_store_course_history($userid, $courseid, $reassignedby) {
-    global $CFG, $DB;
+    global $DB;
     
     try {
-        require_once($CFG->libdir . '/gradelib.php');
+        $course = get_course($courseid);
+        $completioninfo = new completion_info($course);
+        $modinfo = get_fast_modinfo($course, $userid);
 
         // Gather course completion data.
         $completiondata = $DB->get_record('course_completions', [
@@ -79,17 +88,74 @@ function local_coursereassignment_store_course_history($userid, $courseid, $reas
         // Gather grade data.
         $gradedata = grade_get_course_grade($userid, $courseid);
         
-        // Gather activity completion data using JOIN to filter by course.
-        $sql = "SELECT cmc.*
-                  FROM {course_modules_completion} cmc
-                  JOIN {course_modules} cm ON cm.id = cmc.coursemoduleid
-                 WHERE cm.course = :courseid AND cmc.userid = :userid";
-        $courseactivities = $DB->get_records_sql($sql, ['courseid' => $courseid, 'userid' => $userid]);
+        // Gather per-activity completion state (completed and not completed).
+        $courseactivities = [];
+        $quizdata = [];
+        foreach ($modinfo->get_cms() as $cm) {
+            if ($cm->deletioninprogress) {
+                continue;
+            }
+
+            $completionstate = null;
+            $viewedstate = null;
+            $iscompleted = null;
+            if ($completioninfo->is_enabled($cm)) {
+                $data = $completioninfo->get_data($cm, false, $userid);
+                $completionstate = isset($data->completionstate) ? (int)$data->completionstate : null;
+                $viewedstate = isset($data->viewed) ? (int)$data->viewed : null;
+                $iscompleted = in_array($completionstate, [
+                    COMPLETION_COMPLETE,
+                    COMPLETION_COMPLETE_PASS,
+                    COMPLETION_COMPLETE_FAIL,
+                    COMPLETION_COMPLETE_FAIL_HIDDEN,
+                ], true);
+            }
+
+            $courseactivities[] = [
+                'cmid' => $cm->id,
+                'instanceid' => $cm->instance,
+                'modname' => $cm->modname,
+                'name' => format_string($cm->name),
+                'completionenabled' => (bool)$completioninfo->is_enabled($cm),
+                'completionstate' => $completionstate,
+                'viewedstate' => $viewedstate,
+                'iscompleted' => $iscompleted,
+            ];
+
+            if ($cm->modname !== 'quiz') {
+                continue;
+            }
+
+            $quiz = $DB->get_record('quiz', ['id' => $cm->instance], '*');
+            if (!$quiz) {
+                continue;
+            }
+            $attempts = array_values(quiz_get_user_attempts($quiz->id, $userid, 'all', true));
+            $bestgrade = quiz_get_best_grade($quiz, $userid);
+
+            $gradebookgrade = null;
+            $gradeinfo = grade_get_grades($courseid, 'mod', 'quiz', $quiz->id, $userid);
+            if (!empty($gradeinfo->items[0]->grades[$userid])) {
+                $gradebookgrade = $gradeinfo->items[0]->grades[$userid];
+            }
+
+            $quizdata[] = [
+                'quizid' => $quiz->id,
+                'name' => $quiz->name,
+                'coursemoduleid' => $cm->id,
+                'attempts' => $attempts,
+                'bestgrade' => $bestgrade,
+                'gradebookgrade' => $gradebookgrade,
+                'completionstate' => $completionstate,
+                'viewedstate' => $viewedstate,
+            ];
+        }
         
         $olddata = [
-            'completion' => $completiondata,
-            'grade' => $gradedata,
+            'coursecompletion' => $completiondata,
+            'coursegrade' => $gradedata,
             'activities' => array_values($courseactivities),
+            'quizdata' => $quizdata,
             'timestamp' => time()
         ];
         
@@ -103,15 +169,9 @@ function local_coursereassignment_store_course_history($userid, $courseid, $reas
         $record->timecreated = time();
         
         $historyid = $DB->insert_record('local_coursereassignment_history', $record);
-        
-        if (!$historyid) {
-            debugging('Failed to insert history record for user ' . $userid . ' in course ' . $courseid, DEBUG_DEVELOPER);
-            return false;
-        }
-        
-        return $historyid;
+
+        return !empty($historyid) ? $historyid : false;
     } catch (Exception $e) {
-        debugging('Error storing course history: ' . $e->getMessage(), DEBUG_DEVELOPER);
         return false;
     }
 }
@@ -129,31 +189,29 @@ function local_coursereassignment_store_quiz_history($userid, $courseid, $quizid
     global $DB;
     
     try {
+        $quiz = $DB->get_record('quiz', ['id' => $quizid], '*', MUST_EXIST);
+
         // Gather quiz attempts.
         $attempts = $DB->get_records('quiz_attempts', [
             'quiz' => $quizid,
             'userid' => $userid
         ]);
         
-        // Gather quiz grades.
-        $quizgrades = $DB->get_records('quiz_grades', [
-            'quiz' => $quizid,
-            'userid' => $userid
-        ]);
-        
-        // Gather grade item data.
-        $gradeitem = $DB->get_record('grade_items', [
-            'itemtype' => 'mod',
-            'itemmodule' => 'quiz',
-            'iteminstance' => $quizid
-        ]);
-        
+        // Gather quiz grades through core APIs.
+        $bestgrade = quiz_get_best_grade($quiz, $userid);
+        $quizgrades = [];
+        if ($bestgrade !== false && $bestgrade !== null) {
+            $quizgrades[] = (object) [
+                'userid' => $userid,
+                'quiz' => $quizid,
+                'grade' => $bestgrade,
+            ];
+        }
+
         $gradegrades = [];
-        if ($gradeitem) {
-            $gradegrades = $DB->get_records('grade_grades', [
-                'itemid' => $gradeitem->id,
-                'userid' => $userid
-            ]);
+        $gradeinfo = grade_get_grades($courseid, 'mod', 'quiz', $quizid, $userid);
+        if (!empty($gradeinfo->items[0]->grades[$userid])) {
+            $gradegrades[] = $gradeinfo->items[0]->grades[$userid];
         }
         
         // Get quiz completion status.
@@ -181,15 +239,9 @@ function local_coursereassignment_store_quiz_history($userid, $courseid, $quizid
         $record->timecreated = time();
         
         $historyid = $DB->insert_record('local_coursereassignment_history', $record);
-        
-        if (!$historyid) {
-            debugging('Failed to insert quiz history record for user ' . $userid . ' quiz ' . $quizid, DEBUG_DEVELOPER);
-            return false;
-        }
-        
-        return $historyid;
+
+        return !empty($historyid) ? $historyid : false;
     } catch (Exception $e) {
-        debugging('Error storing quiz history: ' . $e->getMessage(), DEBUG_DEVELOPER);
         return false;
     }
 }
@@ -202,75 +254,41 @@ function local_coursereassignment_store_quiz_history($userid, $courseid, $quizid
  * @return bool True on success, false on failure
  */
 function local_coursereassignment_reset_course($userid, $courseid) {
-    global $CFG, $DB;
-    require_once($CFG->dirroot . '/course/lib.php');
-    require_once($CFG->libdir . '/gradelib.php');
-    require_once($CFG->libdir . '/completionlib.php');
+    global $DB;
     
     try {
         $course = get_course($courseid);
-        
-        // Reset activity completions for this specific user in this course.
-        $sql = "SELECT cmc.id
-                  FROM {course_modules_completion} cmc
-                  JOIN {course_modules} cm ON cm.id = cmc.coursemoduleid
-                 WHERE cm.course = :courseid AND cmc.userid = :userid";
-        $completions = $DB->get_records_sql($sql, ['courseid' => $courseid, 'userid' => $userid]);
-        
-        $deletedcount = 0;
-        if ($completions) {
-            $completionids = array_keys($completions);
-            list($insql, $params) = $DB->get_in_or_equal($completionids);
-            $DB->delete_records_select('course_modules_completion', "id $insql", $params);
-            $deletedcount = count($completionids);
-            debugging('Deleted ' . $deletedcount . ' activity completion records for user ' . $userid . ' in course ' . $courseid, DEBUG_DEVELOPER);
-        } else {
-            debugging('No activity completions found for user ' . $userid . ' in course ' . $courseid, DEBUG_DEVELOPER);
-        }
-        
-        // Also delete course_modules_viewed records for this user in this course.
-        $sql = "DELETE FROM {course_modules_viewed}
-                WHERE coursemoduleid IN (
-                    SELECT id FROM {course_modules} WHERE course = :courseid
-                ) AND userid = :userid";
-        $DB->execute($sql, ['courseid' => $courseid, 'userid' => $userid]);
-        
-        // Reset course completion for this user.
-        $completion = new completion_info($course);
-        if ($completion->is_enabled()) {
-            // Delete course completion records.
-            $deleted = $DB->delete_records('course_completions', [
-                'userid' => $userid,
-                'course' => $courseid
-            ]);
-            debugging('Deleted course_completions: ' . ($deleted ? 'yes' : 'no'), DEBUG_DEVELOPER);
-            
-            $deleted = $DB->delete_records('course_completion_crit_compl', [
-                'userid' => $userid,
-                'course' => $courseid
-            ]);
-            debugging('Deleted course_completion_crit_compl: ' . ($deleted ? 'yes' : 'no'), DEBUG_DEVELOPER);
-        }
-        
-        // Reset grades using core grade functions.
-        // Get all grade items for this course.
-        $gradeitems = grade_item::fetch_all(['courseid' => $courseid]);
-        if ($gradeitems) {
-            foreach ($gradeitems as $gradeitem) {
-                // Use delete_grade() which properly handles all related data.
-                $result = $gradeitem->delete_grade($userid);
-                debugging('Deleted grade for item ' . $gradeitem->id . ': ' . ($result ? 'success' : 'failed'), DEBUG_DEVELOPER);
+
+        // Reset all quiz attempts for quizzes in this course.
+        $quizinstances = $DB->get_records('quiz', ['course' => $courseid], '', 'id');
+        foreach ($quizinstances as $quizinstance) {
+            if (!local_coursereassignment_reset_quiz($userid, $quizinstance->id)) {
+                return false;
             }
         }
+
+        // Reset activity completion/viewed data for all modules in this course.
+        $user = core_user::get_user($userid, '*', MUST_EXIST);
+        $modinfo = get_fast_modinfo($course, $userid);
+        foreach ($modinfo->get_cms() as $cm) {
+            if ($cm->deletioninprogress) {
+                continue;
+            }
+            \core_completion\privacy\provider::delete_completion($user, null, $cm->id);
+        }
+
+        // Reset course completion aggregates for this user.
+        \core_completion\privacy\provider::delete_completion($user, $courseid);
+        
+        // Reset all gradebook data for the user in this course.
+        grade_user_unenrol($courseid, $userid);
         
         // Clear the completion cache for this user.
         cache::make('core', 'completion')->purge();
         cache::make('core', 'coursecompletion')->purge();
         
-        debugging('Successfully reset course ' . $courseid . ' for user ' . $userid, DEBUG_DEVELOPER);
         return true;
     } catch (Exception $e) {
-        debugging('Error resetting course: ' . $e->getMessage(), DEBUG_DEVELOPER);
         return false;
     }
 }
@@ -283,59 +301,43 @@ function local_coursereassignment_reset_course($userid, $courseid) {
  * @return bool True on success, false on failure
  */
 function local_coursereassignment_reset_quiz($userid, $quizid) {
-    global $CFG, $DB;
-    require_once($CFG->dirroot . '/mod/quiz/locallib.php');
-    require_once($CFG->libdir . '/gradelib.php');
-    require_once($CFG->libdir . '/completionlib.php');
+    global $DB;
     
     try {
         // Get the quiz record.
         $quiz = $DB->get_record('quiz', ['id' => $quizid], '*', MUST_EXIST);
+        $user = core_user::get_user($userid, '*', MUST_EXIST);
         
         // Get course module.
         $cm = get_coursemodule_from_instance('quiz', $quizid, $quiz->course, false, MUST_EXIST);
         $quiz->cmid = $cm->id;
         
-        // Get all quiz attempts for this user.
-        $attempts = $DB->get_records('quiz_attempts', [
-            'quiz' => $quizid,
-            'userid' => $userid
-        ]);
+        // Delete all attempts for this user for this quiz using the quiz core API.
+        $quizsettings = \mod_quiz\quiz_settings::create($quizid);
+        quiz_delete_user_attempts($quizsettings, $user);
+        quiz_update_grades($quiz, $userid, true);
         
-        debugging('Found ' . count($attempts) . ' attempts for user ' . $userid . ' in quiz ' . $quizid, DEBUG_DEVELOPER);
-        
-        // Delete each attempt using core function.
-        // quiz_delete_attempt handles:
-        // - Deleting question usage
-        // - Deleting the attempt record
-        // - Deleting/recalculating quiz_grades
-        // - Updating gradebook via quiz_update_grades
-        foreach ($attempts as $attempt) {
-            quiz_delete_attempt($attempt, $quiz);
-            debugging('Deleted attempt ' . $attempt->id, DEBUG_DEVELOPER);
+        // Delete user overrides through quiz core override manager.
+        $manager = new \mod_quiz\local\override_manager(
+            $quiz,
+            context_module::instance($cm->id)
+        );
+        $alloverrides = $manager->get_all_overrides();
+        $useroverrides = array_filter($alloverrides, function($override) use ($userid): bool {
+            return !empty($override->userid) && (int)$override->userid === (int)$userid;
+        });
+        if (!empty($useroverrides)) {
+            $manager->delete_overrides($useroverrides, false);
         }
         
-        // Delete quiz overrides for this user.
-        $deleted = $DB->delete_records('quiz_overrides', [
-            'quiz' => $quizid,
-            'userid' => $userid
-        ]);
-        debugging('Deleted quiz overrides: ' . ($deleted ? 'yes' : 'no'), DEBUG_DEVELOPER);
-        
-        // Reset activity completion for this quiz.
-        $deleted = $DB->delete_records('course_modules_completion', [
-            'coursemoduleid' => $cm->id,
-            'userid' => $userid
-        ]);
-        debugging('Deleted quiz completion: ' . ($deleted ? 'yes' : 'no'), DEBUG_DEVELOPER);
+        // Reset completion/viewed state for this quiz activity.
+        \core_completion\privacy\provider::delete_completion($user, null, $cm->id);
         
         // Clear the completion cache.
         cache::make('core', 'completion')->purge();
         
-        debugging('Successfully reset quiz ' . $quizid . ' for user ' . $userid, DEBUG_DEVELOPER);
         return true;
     } catch (Exception $e) {
-        debugging('Error resetting quiz: ' . $e->getMessage(), DEBUG_DEVELOPER);
         return false;
     }
 }
@@ -348,8 +350,6 @@ function local_coursereassignment_reset_quiz($userid, $quizid) {
  * @return bool True on success, false on failure
  */
 function local_coursereassignment_send_course_email($user, $course) {
-    global $CFG;
-    
     $subject = get_config('local_coursereassignment', 'courseemailsubject');
     $message = get_config('local_coursereassignment', 'courseemailtemplate');
     
@@ -388,8 +388,6 @@ function local_coursereassignment_send_course_email($user, $course) {
  * @return bool True on success, false on failure
  */
 function local_coursereassignment_send_quiz_email($user, $course, $quiz) {
-    global $CFG;
-    
     $subject = get_config('local_coursereassignment', 'quizemailsubject');
     $message = get_config('local_coursereassignment', 'quizemailtemplate');
     

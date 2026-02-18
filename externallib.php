@@ -24,6 +24,7 @@
 
 defined('MOODLE_INTERNAL') || die();
 
+require_once(__DIR__ . '/lib.php');
 require_once($CFG->libdir . '/externallib.php');
 
 /**
@@ -199,8 +200,6 @@ class local_coursereassignment_external extends external_api {
      * @return array List of quizzes
      */
     public static function get_course_quizzes($courseid, $userid) {
-        global $DB;
-
         $params = self::validate_parameters(self::get_course_quizzes_parameters(), [
             'courseid' => $courseid,
             'userid' => $userid,
@@ -218,26 +217,28 @@ class local_coursereassignment_external extends external_api {
             return [];
         }
 
-        // Get all quizzes in the course.
-        $sql = "SELECT q.id, q.name, q.intro, cm.id as coursemodule
-                  FROM {quiz} q
-                  JOIN {course_modules} cm ON cm.instance = q.id
-                  JOIN {modules} m ON m.id = cm.module
-                 WHERE q.course = :courseid
-                   AND m.name = 'quiz'
-                   AND cm.deletioninprogress = 0
-              ORDER BY q.name";
-
-        $quizzes = $DB->get_records_sql($sql, ['courseid' => $courseid]);
+        $course = get_course($courseid);
+        $modinfo = get_fast_modinfo($course, $userid);
 
         $result = [];
-        foreach ($quizzes as $quiz) {
+        if (empty($modinfo->instances['quiz'])) {
+            return $result;
+        }
+
+        foreach ($modinfo->instances['quiz'] as $cm) {
+            if ($cm->deletioninprogress) {
+                continue;
+            }
             $result[] = [
-                'id' => $quiz->id,
-                'name' => $quiz->name,
-                'coursemodule' => $quiz->coursemodule,
+                'id' => (int)$cm->instance,
+                'name' => format_string($cm->name),
+                'coursemodule' => (int)$cm->id,
             ];
         }
+
+        usort($result, function(array $a, array $b): int {
+            return strcmp(core_text::strtolower($a['name']), core_text::strtolower($b['name']));
+        });
 
         return $result;
     }

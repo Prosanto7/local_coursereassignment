@@ -35,32 +35,16 @@ class local_coursereassignment_quiz_form extends moodleform {
      * Form definition.
      */
     public function definition() {
-        global $DB;
-        
         $mform = $this->_form;
-
-        // Get all active users for autocomplete.
-        // Select all user fields to avoid missing field warnings when calling fullname().
-        $sql = "SELECT u.*
-                FROM {user} u
-                WHERE u.deleted = 0
-                AND u.suspended = 0
-                AND u.id NOT IN (1, 2)
-                ORDER BY u.lastname, u.firstname";
-        
-        $users = $DB->get_records_sql($sql);
-        
-        // Build options array for user autocomplete.
-        $useroptions = [];
-        foreach ($users as $user) {
-            $useroptions[$user->id] = fullname($user) . ' (' . $user->username . ') - ' . $user->email;
-        }
         
         // User selection with autocomplete.
         $mform->addElement('autocomplete', 'userid', 
             get_string('selectuser', 'local_coursereassignment'), 
-            $useroptions,
-            ['noselectionstring' => get_string('searchuser', 'local_coursereassignment')]
+            [],
+            [
+                'ajax' => 'core_user/form_user_selector',
+                'multiple' => false,
+            ]
         );
         $mform->addRule('userid', get_string('usernotselected', 'local_coursereassignment'), 'required', null, 'client');
         $mform->addHelpButton('userid', 'selectuser', 'local_coursereassignment');
@@ -69,7 +53,10 @@ class local_coursereassignment_quiz_form extends moodleform {
         $mform->addElement('autocomplete', 'courseid', 
             get_string('selectcourse', 'local_coursereassignment'), 
             [],
-            ['noselectionstring' => get_string('searchcourse', 'local_coursereassignment')]
+            [
+                'ajax' => 'local_coursereassignment/course_selector',
+                'multiple' => false
+            ]
         );
         $mform->addRule('courseid', get_string('coursenotselected', 'local_coursereassignment'), 'required', null, 'client');
         $mform->addHelpButton('courseid', 'selectcourse', 'local_coursereassignment');
@@ -79,7 +66,10 @@ class local_coursereassignment_quiz_form extends moodleform {
         $mform->addElement('autocomplete', 'quizid', 
             get_string('selectquiz', 'local_coursereassignment'), 
             [],
-            ['noselectionstring' => get_string('searchquiz', 'local_coursereassignment')]
+            [
+                'ajax' => 'local_coursereassignment/quiz_selector',
+                'multiple' => false
+            ]
         );
         $mform->addRule('quizid', get_string('quiznotselected', 'local_coursereassignment'), 'required', null, 'client');
         $mform->addHelpButton('quizid', 'selectquiz', 'local_coursereassignment');
@@ -87,44 +77,5 @@ class local_coursereassignment_quiz_form extends moodleform {
 
         // Action buttons.
         $this->add_action_buttons(true, get_string('reassignbutton', 'local_coursereassignment'));
-    }
-
-    /**
-     * Validation.
-     *
-     * @param array $data Data to validate
-     * @param array $files Files
-     * @return array Errors
-     */
-    public function validation($data, $files) {
-        $errors = parent::validation($data, $files);
-
-        if (empty($data['userid'])) {
-            $errors['userid'] = get_string('usernotselected', 'local_coursereassignment');
-        }
-
-        if (empty($data['courseid'])) {
-            $errors['courseid'] = get_string('coursenotselected', 'local_coursereassignment');
-        }
-
-        if (empty($data['quizid'])) {
-            $errors['quizid'] = get_string('quiznotselected', 'local_coursereassignment');
-        }
-
-        // Validate user enrollment.
-        if (!empty($data['userid']) && !empty($data['courseid'])) {
-            if (!local_coursereassignment_is_user_enrolled($data['userid'], $data['courseid'])) {
-                $errors['courseid'] = get_string('usernotenrolled', 'local_coursereassignment');
-            }
-        }
-
-        // Validate quiz belongs to course.
-        if (!empty($data['quizid']) && !empty($data['courseid'])) {
-            if (!local_coursereassignment_is_quiz_valid($data['quizid'], $data['courseid'])) {
-                $errors['quizid'] = get_string('quiznotincourse', 'local_coursereassignment');
-            }
-        }
-
-        return $errors;
     }
 }

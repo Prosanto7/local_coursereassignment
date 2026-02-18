@@ -27,7 +27,6 @@ require_once($CFG->libdir . '/adminlib.php');
 require_once(__DIR__ . '/lib.php');
 require_once(__DIR__ . '/classes/quiz_reassign_form.php');
 
-admin_externalpage_setup('local_coursereassignment_course');
 require_login();
 
 $context = context_system::instance();
@@ -37,6 +36,7 @@ $PAGE->set_context($context);
 $PAGE->set_url(new moodle_url('/local/coursereassignment/quiz_reassign.php'));
 $PAGE->set_title(get_string('quizreassign', 'local_coursereassignment'));
 $PAGE->set_heading(get_string('quizreassign', 'local_coursereassignment'));
+$PAGE->set_pagelayout('admin');
 
 // Initialize form.
 $mform = new local_coursereassignment_quiz_form();
@@ -44,27 +44,18 @@ $mform = new local_coursereassignment_quiz_form();
 // Handle form cancellation.
 if ($mform->is_cancelled()) {
     redirect(new moodle_url('/local/coursereassignment/quiz_reassign.php'));
-}
-
-// Handle form submission.
-if ($data = $mform->get_data()) {
+} else if ($data = $mform->get_data()) {
     $userid = $data->userid;
     $courseid = $data->courseid;
     $quizid = $data->quizid;
-    
-    debugging('Quiz reassignment started for user ' . $userid . ' quiz ' . $quizid . ' in course ' . $courseid, DEBUG_DEVELOPER);
-    
+
     // Store historical data.
     $historyid = local_coursereassignment_store_quiz_history($userid, $courseid, $quizid, $USER->id);
-    
-    debugging('Quiz history storage result: ' . ($historyid ? 'success (ID: ' . $historyid . ')' : 'failed'), DEBUG_DEVELOPER);
-    
+
     if ($historyid) {
         // Reset quiz data.
         $success = local_coursereassignment_reset_quiz($userid, $quizid);
-        
-        debugging('Quiz reset result: ' . ($success ? 'success' : 'failed'), DEBUG_DEVELOPER);
-        
+
         if ($success) {
             // Send email notification.
             $user = $DB->get_record('user', ['id' => $userid], '*', MUST_EXIST);
@@ -103,9 +94,6 @@ if ($data = $mform->get_data()) {
         );
     }
 }
-
-// Include JavaScript for dynamic course and quiz loading.
-$PAGE->requires->js_call_amd('local_coursereassignment/quizreassign', 'init');
 
 echo $OUTPUT->header();
 echo $OUTPUT->heading(get_string('quizreassign', 'local_coursereassignment'));

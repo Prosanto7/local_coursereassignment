@@ -27,7 +27,6 @@ require_once($CFG->libdir . '/adminlib.php');
 require_once(__DIR__ . '/lib.php');
 require_once(__DIR__ . '/classes/course_reassign_form.php');
 
-//admin_externalpage_setup('local_coursereassignment_course');
 require_login();
 
 $context = context_system::instance();
@@ -48,9 +47,6 @@ if ($mform->is_cancelled()) {
 } else if ($data = $mform->get_data()) {
     $userid = $data->userid;
     $courseid = $data->courseid;
-
-    var_dump($data); // Debugging: dump form data.
-    die();
         
     // Store historical data.
     $historyid = local_coursereassignment_store_course_history($userid, $courseid, $USER->id);
@@ -94,9 +90,6 @@ if ($mform->is_cancelled()) {
         );
     }
 }
-
-// Include JavaScript for dynamic course loading.
-$PAGE->requires->js_call_amd('local_coursereassignment/coursereassign', 'init');
 
 echo $OUTPUT->header();
 echo $OUTPUT->heading(get_string('coursereassign', 'local_coursereassignment'));

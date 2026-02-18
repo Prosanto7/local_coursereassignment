@@ -76,9 +76,23 @@ $string['reassignmenttype'] = 'Type';
 $string['course'] = 'Course';
 $string['quiz'] = 'Quiz';
 $string['user'] = 'User';
+$string['grade'] = 'Grade';
+$string['state'] = 'State';
+$string['attempt'] = 'Attempt No.';
 $string['reassignedby'] = 'Re-assigned By';
 $string['reassigndate'] = 'Re-assignment Date';
 $string['nohistory'] = 'No re-assignment history found';
+$string['viewdetails'] = 'View details';
+$string['historydetailstitle'] = 'Re-assignment History Details';
+$string['activitycompletionstatus'] = 'Activity completion status';
+$string['activity'] = 'Activity';
+$string['completionstatus'] = 'Completion status';
+$string['completedactivities'] = 'Completed activities';
+$string['incomplete'] = 'Not completed';
+$string['notcompletedactivities'] = 'Not completed activities';
+$string['nottrackedactivities'] = 'Not tracked activities';
+$string['quizhistorysnapshot'] = 'Quiz history snapshot';
+$string['noquizattemptdata'] = 'No quiz attempt data stored for this record';
 
 // Types.
 $string['type_course'] = 'Course';
