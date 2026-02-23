@@ -49,6 +49,9 @@ $string['reassignbutton'] = 'Re-assign';
 
 // Settings.
 $string['settings'] = 'Course Re-assignment Settings';
+$string['historysettings'] = 'History Settings';
+$string['historyperpage'] = 'History records per page';
+$string['historyperpage_desc'] = 'Number of re-assignment history records displayed per page on the history screen.';
 $string['emailsettings'] = 'Email Settings';
 $string['courseemailtemplate'] = 'Course Re-assignment Email Template';
 $string['courseemailtemplate_desc'] = 'Email template for course re-assignment. Available placeholders: {firstname}, {lastname}, {username}, {coursename}, {courselink}';
@@ -69,6 +72,7 @@ $string['reassignsuccess'] = 'Re-assignment completed successfully';
 $string['reassignfailed'] = 'Re-assignment failed. Please try again.';
 $string['emailsentsuccess'] = 'Email notification sent successfully';
 $string['emailsentfailed'] = 'Failed to send email notification';
+$string['notificationsentsuccess'] = 'Moodle notification sent successfully';
 
 // History page.
 $string['historypagetitle'] = 'Re-assignment History';
@@ -77,7 +81,9 @@ $string['course'] = 'Course';
 $string['quiz'] = 'Quiz';
 $string['user'] = 'User';
 $string['grade'] = 'Grade';
+$string['bestgrade'] = 'Best grade';
 $string['state'] = 'State';
+$string['duration'] = 'Duration';
 $string['attempt'] = 'Attempt No.';
 $string['reassignedby'] = 'Re-assigned By';
 $string['reassigndate'] = 'Re-assignment Date';
@@ -92,6 +98,7 @@ $string['incomplete'] = 'Not completed';
 $string['notcompletedactivities'] = 'Not completed activities';
 $string['nottrackedactivities'] = 'Not tracked activities';
 $string['quizhistorysnapshot'] = 'Quiz history snapshot';
+$string['quiztitle'] = 'Quiz: {$a}';
 $string['noquizattemptdata'] = 'No quiz attempt data stored for this record';
 
 // Types.
@@ -125,3 +132,4 @@ $string['privacy:metadata:local_coursereassignment_history:courseid'] = 'The ID 
 $string['privacy:metadata:local_coursereassignment_history:quizid'] = 'The ID of the quiz that was re-assigned';
 $string['privacy:metadata:local_coursereassignment_history:timecreated'] = 'The time when the re-assignment was performed';
 $string['privacy:metadata:local_coursereassignment_history:olddata'] = 'Historical data before re-assignment';
+$string['messageprovider:reassignmentnotice'] = 'Re-assignment notifications';

@@ -57,7 +57,7 @@ if ($mform->is_cancelled()) {
         $success = local_coursereassignment_reset_quiz($userid, $quizid);
 
         if ($success) {
-            // Send email notification.
+            // Send notifications.
             $user = $DB->get_record('user', ['id' => $userid], '*', MUST_EXIST);
             $course = $DB->get_record('course', ['id' => $courseid], '*', MUST_EXIST);
             $quiz = $DB->get_record('quiz', ['id' => $quizid], '*', MUST_EXIST);
@@ -65,11 +65,9 @@ if ($mform->is_cancelled()) {
             $quiz->coursemodule = $cm->id;
             
             $emailsent = local_coursereassignment_send_quiz_email($user, $course, $quiz);
+            $notificationsent = local_coursereassignment_send_quiz_notification($user, $course, $quiz);
             
             $message = get_string('reassignsuccess', 'local_coursereassignment');
-            if ($emailsent) {
-                $message .= ' ' . get_string('emailsentsuccess', 'local_coursereassignment');
-            }
             
             redirect(
                 new moodle_url('/local/coursereassignment/quiz_reassign.php'),
@@ -78,6 +76,7 @@ if ($mform->is_cancelled()) {
                 \core\output\notification::NOTIFY_SUCCESS
             );
         } else {
+            $DB->delete_records('local_coursereassignment_history', ['id' => $historyid]);
             redirect(
                 new moodle_url('/local/coursereassignment/quiz_reassign.php'),
                 get_string('reassignfailed', 'local_coursereassignment'),

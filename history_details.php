@@ -69,18 +69,24 @@ $renderattempttable = function(array $attempts): string {
         get_string('state', 'local_coursereassignment'),
         get_string('startedon', 'quiz'),
         get_string('timecompleted', 'quiz'),
+        get_string('duration', 'local_coursereassignment'),
         get_string('grade', 'local_coursereassignment'),
     ];
     foreach ($attempts as $attempt) {
         $state = !empty($attempt['state']) ? s((string)$attempt['state']) : '-';
         $started = !empty($attempt['timestart']) ? userdate((int)$attempt['timestart']) : '-';
         $finished = !empty($attempt['timefinish']) ? userdate((int)$attempt['timefinish']) : '-';
+        $duration = '-';
+        if (!empty($attempt['timestart']) && !empty($attempt['timefinish'])) {
+            $duration = format_time((int)$attempt['timefinish'] - (int)$attempt['timestart']);
+        }
         $grade = array_key_exists('sumgrades', $attempt) && $attempt['sumgrades'] !== null ? s((string)$attempt['sumgrades']) : '-';
         $table->data[] = [
             !empty($attempt['attempt']) ? (int)$attempt['attempt'] : '-',
             $state,
             $started,
             $finished,
+            $duration,
             $grade,
         ];
     }
@@ -95,7 +101,6 @@ $infotable->data = [
     [get_string('reassignmenttype', 'local_coursereassignment'), $record->reassignmenttype === 'course' ? get_string('type_course', 'local_coursereassignment') : get_string('type_quiz', 'local_coursereassignment')],
     [get_string('user', 'local_coursereassignment'), fullname($record) . ' (' . s($record->username) . ')'],
     [get_string('course', 'local_coursereassignment'), format_string($record->coursename)],
-    [get_string('quiz', 'local_coursereassignment'), !empty($record->quizname) ? format_string($record->quizname) : '-'],
     [get_string('reassignedby', 'local_coursereassignment'), fullname((object)['firstname' => $record->reassignedfirstname, 'lastname' => $record->reassignedlastname])],
     [get_string('reassigndate', 'local_coursereassignment'), userdate((int)$record->timecreated)],
 ];
@@ -157,12 +162,13 @@ if ($record->reassignmenttype === 'course') {
     } else {
         foreach ($quizdata as $quizsnapshot) {
             $quizname = format_string($quizsnapshot['name'] ?? get_string('quiz', 'local_coursereassignment'));
-            echo $OUTPUT->heading($quizname, 4);
+            echo $OUTPUT->heading(get_string('quiztitle', 'local_coursereassignment', $quizname), 4);
             $attempts = $quizsnapshot['attempts'] ?? [];
             $bestgrade = $quizsnapshot['bestgrade'] ?? null;
             echo html_writer::tag('p', get_string('attempts', 'quiz') . ': ' . count($attempts));
-            echo html_writer::tag('p', get_string('grade', 'local_coursereassignment') . ': ' . (($bestgrade !== null && $bestgrade !== false) ? s((string)$bestgrade) : '-'));
+            echo html_writer::tag('p', get_string('bestgrade', 'local_coursereassignment') . ': ' . (($bestgrade !== null && $bestgrade !== false) ? s((string)$bestgrade) : '-'));
             echo $renderattempttable($attempts);
+            echo html_writer::empty_tag('hr', ['class' => 'my-4']);
         }
     }
 } else {

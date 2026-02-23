@@ -34,6 +34,17 @@ if ($hassiteconfig) {
         get_string('settings', 'local_coursereassignment'));
 
     if ($ADMIN->fulltree) {
+        // History settings heading.
+        $settings->add(new admin_setting_heading('local_coursereassignment/historysettings',
+            get_string('historysettings', 'local_coursereassignment'), ''));
+
+        // Number of history records to show per page.
+        $settings->add(new admin_setting_configtext('local_coursereassignment/historyperpage',
+            get_string('historyperpage', 'local_coursereassignment'),
+            get_string('historyperpage_desc', 'local_coursereassignment'),
+            10,
+            PARAM_INT));
+
         // Email settings heading.
         $settings->add(new admin_setting_heading('local_coursereassignment/emailsettings',
             get_string('emailsettings', 'local_coursereassignment'), ''));

@@ -219,7 +219,6 @@ class provider implements
             }
 
             $DB->delete_records('local_coursereassignment_history', ['userid' => $user->id]);
-            $DB->delete_records('local_coursereassignment_history', ['reassignedby' => $user->id]);
         }
     }
 
@@ -238,10 +237,11 @@ class provider implements
         }
 
         $userids = $userlist->get_userids();
-
-        foreach ($userids as $userid) {
-            $DB->delete_records('local_coursereassignment_history', ['userid' => $userid]);
-            $DB->delete_records('local_coursereassignment_history', ['reassignedby' => $userid]);
+        if (empty($userids)) {
+            return;
         }
+
+        [$insql, $inparams] = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED);
+        $DB->delete_records_select('local_coursereassignment_history', "userid $insql", $inparams);
     }
 }

@@ -15,7 +15,7 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Version information for Course Re-assignment plugin.
+ * Message providers for Course Re-assignment plugin.
  *
  * @package    local_coursereassignment
  * @copyright  2026
@@ -24,8 +24,6 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-$plugin->component = 'local_coursereassignment';
-$plugin->version = 2026022300;
-$plugin->requires = 2022112800; // Moodle 4.1 or later.
-$plugin->maturity = MATURITY_STABLE;
-$plugin->release = '1.0.1';
+$messageproviders = [
+    'reassignmentnotice' => [],
+];

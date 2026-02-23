@@ -380,6 +380,59 @@ function local_coursereassignment_send_course_email($user, $course) {
 }
 
 /**
+ * Send core notification for course re-assignment.
+ *
+ * @param object $user User object
+ * @param object $course Course object
+ * @return bool True on success, false on failure
+ */
+function local_coursereassignment_send_course_notification($user, $course) {
+    global $USER;
+
+    $subject = get_config('local_coursereassignment', 'courseemailsubject');
+    $message = get_config('local_coursereassignment', 'courseemailtemplate');
+
+    if (empty($subject)) {
+        $subject = get_string('defaultcoursesubject', 'local_coursereassignment');
+    }
+    if (empty($message)) {
+        $message = get_string('defaultcoursemessage', 'local_coursereassignment');
+    }
+
+    $courseurl = new moodle_url('/course/view.php', ['id' => $course->id]);
+
+    $placeholders = [
+        '{firstname}' => $user->firstname,
+        '{lastname}' => $user->lastname,
+        '{username}' => $user->username,
+        '{coursename}' => $course->fullname,
+        '{courselink}' => $courseurl->out(false),
+    ];
+
+    $subject = str_replace(array_keys($placeholders), array_values($placeholders), $subject);
+    $message = str_replace(array_keys($placeholders), array_values($placeholders), $message);
+
+    $receiver = core_user::get_user($user->id, '*', MUST_EXIST);
+    $sender = core_user::get_user($USER->id, '*', MUST_EXIST);
+
+    $notification = new \core\message\message();
+    $notification->component = 'moodle';
+    $notification->name = 'instantmessage';
+    $notification->userfrom = $sender;
+    $notification->userto = $receiver;
+    $notification->subject = $subject;
+    $notification->fullmessage = html_to_text($message);
+    $notification->fullmessagehtml = $message;
+    $notification->fullmessageformat = FORMAT_HTML;
+    $notification->smallmessage = $subject;
+    $notification->notification = 1;
+    $notification->contexturl = $courseurl->out(false);
+    $notification->contexturlname = format_string($course->fullname);
+
+    return (bool)message_send($notification);
+}
+
+/**
  * Send email notification for quiz re-assignment.
  *
  * @param object $user User object
@@ -416,4 +469,59 @@ function local_coursereassignment_send_quiz_email($user, $course, $quiz) {
     $from = core_user::get_support_user();
     
     return email_to_user($user, $from, $subject, html_to_text($message), $message);
+}
+
+/**
+ * Send core notification for quiz re-assignment.
+ *
+ * @param object $user User object
+ * @param object $course Course object
+ * @param object $quiz Quiz object
+ * @return bool True on success, false on failure
+ */
+function local_coursereassignment_send_quiz_notification($user, $course, $quiz) {
+    global $USER;
+
+    $subject = get_config('local_coursereassignment', 'quizemailsubject');
+    $message = get_config('local_coursereassignment', 'quizemailtemplate');
+
+    if (empty($subject)) {
+        $subject = get_string('defaultquizsubject', 'local_coursereassignment');
+    }
+    if (empty($message)) {
+        $message = get_string('defaultquizmessage', 'local_coursereassignment');
+    }
+
+    $quizurl = new moodle_url('/mod/quiz/view.php', ['id' => $quiz->coursemodule]);
+
+    $placeholders = [
+        '{firstname}' => $user->firstname,
+        '{lastname}' => $user->lastname,
+        '{username}' => $user->username,
+        '{coursename}' => $course->fullname,
+        '{quizname}' => $quiz->name,
+        '{quizlink}' => $quizurl->out(false),
+    ];
+
+    $subject = str_replace(array_keys($placeholders), array_values($placeholders), $subject);
+    $message = str_replace(array_keys($placeholders), array_values($placeholders), $message);
+
+    $receiver = core_user::get_user($user->id, '*', MUST_EXIST);
+    $sender = core_user::get_user($USER->id, '*', MUST_EXIST);
+
+    $notification = new \core\message\message();
+    $notification->component = 'moodle';
+    $notification->name = 'instantmessage';
+    $notification->userfrom = $sender;
+    $notification->userto = $receiver;
+    $notification->subject = $subject;
+    $notification->fullmessage = html_to_text($message);
+    $notification->fullmessagehtml = $message;
+    $notification->fullmessageformat = FORMAT_HTML;
+    $notification->smallmessage = $subject;
+    $notification->notification = 1;
+    $notification->contexturl = $quizurl->out(false);
+    $notification->contexturlname = format_string($quiz->name);
+
+    return (bool)message_send($notification);
 }

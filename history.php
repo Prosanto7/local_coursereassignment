@@ -31,7 +31,11 @@ admin_externalpage_setup('local_coursereassignment_history');
 
 $userid = optional_param('userid', 0, PARAM_INT);
 $search = trim(optional_param('search', '', PARAM_RAW_TRIMMED));
-$perpage = optional_param('perpage', 10, PARAM_INT);
+$defaultperpage = (int)get_config('local_coursereassignment', 'historyperpage');
+if ($defaultperpage <= 0) {
+    $defaultperpage = 10;
+}
+$perpage = optional_param('perpage', $defaultperpage, PARAM_INT);
 $perpage = max(1, min($perpage, TABLE_SHOW_ALL_PAGE_SIZE));
 
 $PAGE->set_url(new moodle_url('/local/coursereassignment/history.php'));
@@ -197,7 +201,7 @@ foreach ($records as $record) {
 
     $userlabel = fullname($record);
     $userlink = html_writer::link(
-        new moodle_url('/local/coursereassignment/history.php', ['userid' => $record->userid]),
+        new moodle_url('/user/profile.php', ['id' => $record->userid]),
         $userlabel
     );
 
