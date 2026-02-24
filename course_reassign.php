@@ -60,8 +60,7 @@ if ($mform->is_cancelled()) {
             $user = $DB->get_record('user', ['id' => $userid], '*', MUST_EXIST);
             $course = $DB->get_record('course', ['id' => $courseid], '*', MUST_EXIST);
             
-            $emailsent = local_coursereassignment_send_course_email($user, $course);
-            $notificationsent = local_coursereassignment_send_course_notification($user, $course);
+            local_coursereassignment_send_course_notification($user, $course);
             
             $message = get_string('reassignsuccess', 'local_coursereassignment');
             

@@ -64,8 +64,7 @@ if ($mform->is_cancelled()) {
             $cm = get_coursemodule_from_instance('quiz', $quizid, $courseid, false, MUST_EXIST);
             $quiz->coursemodule = $cm->id;
             
-            $emailsent = local_coursereassignment_send_quiz_email($user, $course, $quiz);
-            $notificationsent = local_coursereassignment_send_quiz_notification($user, $course, $quiz);
+            local_coursereassignment_send_quiz_notification($user, $course, $quiz);
             
             $message = get_string('reassignsuccess', 'local_coursereassignment');
             

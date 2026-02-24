@@ -39,8 +39,6 @@ require_once($CFG->dirroot . '/mod/quiz/lib.php');
  * @return bool True if enrolled, false otherwise
  */
 function local_coursereassignment_is_user_enrolled($userid, $courseid) {
-    global $DB;
-    
     $context = context_course::instance($courseid);
     return is_enrolled($context, $userid, '', true);
 }
@@ -257,18 +255,23 @@ function local_coursereassignment_reset_course($userid, $courseid) {
     global $DB;
     
     try {
+        if (!local_coursereassignment_is_user_enrolled($userid, $courseid)) {
+            return false;
+        }
+
+        $transaction = $DB->start_delegated_transaction();
         $course = get_course($courseid);
+        $user = core_user::get_user($userid, '*', MUST_EXIST);
 
         // Reset all quiz attempts for quizzes in this course.
         $quizinstances = $DB->get_records('quiz', ['course' => $courseid], '', 'id');
         foreach ($quizinstances as $quizinstance) {
-            if (!local_coursereassignment_reset_quiz($userid, $quizinstance->id)) {
-                return false;
+            if (!local_coursereassignment_reset_quiz($userid, $quizinstance->id, false)) {
+                throw new moodle_exception('reassignfailed', 'local_coursereassignment');
             }
         }
 
         // Reset activity completion/viewed data for all modules in this course.
-        $user = core_user::get_user($userid, '*', MUST_EXIST);
         $modinfo = get_fast_modinfo($course, $userid);
         foreach ($modinfo->get_cms() as $cm) {
             if ($cm->deletioninprogress) {
@@ -282,13 +285,15 @@ function local_coursereassignment_reset_course($userid, $courseid) {
         
         // Reset all gradebook data for the user in this course.
         grade_user_unenrol($courseid, $userid);
-        
-        // Clear the completion cache for this user.
+
+        // Purge once after a full course reset to avoid repeated purges per quiz.
         cache::make('core', 'completion')->purge();
         cache::make('core', 'coursecompletion')->purge();
-        
+
+        $transaction->allow_commit();
         return true;
     } catch (Exception $e) {
+        debugging($e->getMessage(), DEBUG_DEVELOPER);
         return false;
     }
 }
@@ -298,14 +303,20 @@ function local_coursereassignment_reset_course($userid, $courseid) {
  *
  * @param int $userid User ID
  * @param int $quizid Quiz ID
+ * @param bool $purgecache Whether to purge completion caches after reset
  * @return bool True on success, false on failure
  */
-function local_coursereassignment_reset_quiz($userid, $quizid) {
+function local_coursereassignment_reset_quiz($userid, $quizid, $purgecache = true) {
     global $DB;
     
     try {
+        $transaction = $DB->start_delegated_transaction();
+
         // Get the quiz record.
         $quiz = $DB->get_record('quiz', ['id' => $quizid], '*', MUST_EXIST);
+        if (!local_coursereassignment_is_user_enrolled($userid, $quiz->course)) {
+            throw new moodle_exception('usernotenrolled', 'local_coursereassignment');
+        }
         $user = core_user::get_user($userid, '*', MUST_EXIST);
         
         // Get course module.
@@ -333,50 +344,18 @@ function local_coursereassignment_reset_quiz($userid, $quizid) {
         // Reset completion/viewed state for this quiz activity.
         \core_completion\privacy\provider::delete_completion($user, null, $cm->id);
         
-        // Clear the completion cache.
-        cache::make('core', 'completion')->purge();
-        
+        if ($purgecache) {
+            // Keep this to avoid stale completion state in the same request after resets.
+            cache::make('core', 'completion')->purge();
+            cache::make('core', 'coursecompletion')->purge();
+        }
+
+        $transaction->allow_commit();
         return true;
     } catch (Exception $e) {
+        debugging($e->getMessage(), DEBUG_DEVELOPER);
         return false;
     }
-}
-
-/**
- * Send email notification for course re-assignment.
- *
- * @param object $user User object
- * @param object $course Course object
- * @return bool True on success, false on failure
- */
-function local_coursereassignment_send_course_email($user, $course) {
-    $subject = get_config('local_coursereassignment', 'courseemailsubject');
-    $message = get_config('local_coursereassignment', 'courseemailtemplate');
-    
-    if (empty($subject)) {
-        $subject = get_string('defaultcoursesubject', 'local_coursereassignment');
-    }
-    if (empty($message)) {
-        $message = get_string('defaultcoursemessage', 'local_coursereassignment');
-    }
-    
-    $courseurl = new moodle_url('/course/view.php', ['id' => $course->id]);
-    $courselink = html_writer::link($courseurl, $course->fullname);
-    
-    $placeholders = [
-        '{firstname}' => $user->firstname,
-        '{lastname}' => $user->lastname,
-        '{username}' => $user->username,
-        '{coursename}' => $course->fullname,
-        '{courselink}' => $courseurl->out(false)
-    ];
-    
-    $subject = str_replace(array_keys($placeholders), array_values($placeholders), $subject);
-    $message = str_replace(array_keys($placeholders), array_values($placeholders), $message);
-    
-    $from = core_user::get_support_user();
-    
-    return email_to_user($user, $from, $subject, html_to_text($message), $message);
 }
 
 /**
@@ -430,45 +409,6 @@ function local_coursereassignment_send_course_notification($user, $course) {
     $notification->contexturlname = format_string($course->fullname);
 
     return (bool)message_send($notification);
-}
-
-/**
- * Send email notification for quiz re-assignment.
- *
- * @param object $user User object
- * @param object $course Course object
- * @param object $quiz Quiz object
- * @return bool True on success, false on failure
- */
-function local_coursereassignment_send_quiz_email($user, $course, $quiz) {
-    $subject = get_config('local_coursereassignment', 'quizemailsubject');
-    $message = get_config('local_coursereassignment', 'quizemailtemplate');
-    
-    if (empty($subject)) {
-        $subject = get_string('defaultquizsubject', 'local_coursereassignment');
-    }
-    if (empty($message)) {
-        $message = get_string('defaultquizmessage', 'local_coursereassignment');
-    }
-    
-    $quizurl = new moodle_url('/mod/quiz/view.php', ['id' => $quiz->coursemodule]);
-    $quizlink = html_writer::link($quizurl, $quiz->name);
-    
-    $placeholders = [
-        '{firstname}' => $user->firstname,
-        '{lastname}' => $user->lastname,
-        '{username}' => $user->username,
-        '{coursename}' => $course->fullname,
-        '{quizname}' => $quiz->name,
-        '{quizlink}' => $quizurl->out(false)
-    ];
-    
-    $subject = str_replace(array_keys($placeholders), array_values($placeholders), $subject);
-    $message = str_replace(array_keys($placeholders), array_values($placeholders), $message);
-    
-    $from = core_user::get_support_user();
-    
-    return email_to_user($user, $from, $subject, html_to_text($message), $message);
 }
 
 /**
